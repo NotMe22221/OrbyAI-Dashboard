@@ -54,7 +54,7 @@ function generateSessionId() {
 }
 
 export function VoiceSessionProvider({ children }: { children: ReactNode }) {
-  const [sessionId, setSessionId] = useState<string>(() => generateSessionId());
+  const [sessionId, setSessionId] = useState<string>("pending-session");
   const [orbState, setOrbState] = useState<OrbState>("idle");
   const [liveTranscript, setLiveTranscript] = useState("");
   const [assistantResponse, setAssistantResponse] = useState("");
@@ -67,6 +67,20 @@ export function VoiceSessionProvider({ children }: { children: ReactNode }) {
   const recentContextRef = useRef<Array<{ role: "user" | "assistant"; content: string }>>([]);
 
   const clearError = useCallback(() => setErrorMessage(null), []);
+
+  useEffect(() => {
+    setSessionId(generateSessionId());
+  }, []);
+
+  const resolveSessionId = useCallback(() => {
+    if (sessionId !== "pending-session") {
+      return sessionId;
+    }
+
+    const fresh = generateSessionId();
+    setSessionId(fresh);
+    return fresh;
+  }, [sessionId]);
 
   const resetSessionContext = useCallback(() => {
     recentContextRef.current = [];
@@ -160,12 +174,13 @@ export function VoiceSessionProvider({ children }: { children: ReactNode }) {
     [playAudio, pushActivity, resetSessionContext],
   );
 
-  const ensureStream = useCallback(() => {
+  const ensureStream = useCallback((targetSessionId?: string) => {
     if (eventSourceRef.current) {
       return;
     }
 
-    const source = new EventSource(`/api/stream/${sessionId}`);
+    const sid = targetSessionId ?? sessionId;
+    const source = new EventSource(`/api/stream/${sid}`);
     source.onmessage = (messageEvent) => {
       try {
         const parsed = JSON.parse(messageEvent.data) as SSEEvent;
@@ -187,7 +202,8 @@ export function VoiceSessionProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      ensureStream();
+      const currentSessionId = resolveSessionId();
+      ensureStream(currentSessionId);
       setOrbState("thinking");
       setLiveTranscript(text);
       setAssistantResponse("");
@@ -201,7 +217,7 @@ export function VoiceSessionProvider({ children }: { children: ReactNode }) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            session_id: sessionId,
+            session_id: currentSessionId,
             transcript: text,
             context: {
               active_integrations: ALL_SERVICES,
@@ -221,11 +237,12 @@ export function VoiceSessionProvider({ children }: { children: ReactNode }) {
         setErrorMessage(error instanceof Error ? error.message : "Voice request failed");
       }
     },
-    [ensureStream, sessionId],
+    [ensureStream, resolveSessionId],
   );
 
   const startListening = useCallback(async () => {
-    ensureStream();
+    const currentSessionId = resolveSessionId();
+    ensureStream(currentSessionId);
 
     try {
       const started = await startVapiSession({
@@ -256,7 +273,7 @@ export function VoiceSessionProvider({ children }: { children: ReactNode }) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to start Vapi session.");
       setOrbState("error");
     }
-  }, [ensureStream, submitTranscript]);
+  }, [ensureStream, resolveSessionId, submitTranscript]);
 
   const stopListening = useCallback(async () => {
     await stopVapiSession();
