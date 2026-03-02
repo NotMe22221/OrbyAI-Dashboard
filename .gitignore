@@ -1,0 +1,12 @@
+node_modules/
+.next/
+out/
+artifacts/dashboard-build/
+artifacts/dashboard-build.zip
+.env.local
+.env
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.DS_Store

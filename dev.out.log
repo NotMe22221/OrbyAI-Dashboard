@@ -1,0 +1,20 @@
+
+> resident-secretary-dashboard@1.0.0 dev:dashboard
+> npm --workspace @resident-secretary/dashboard run dev
+
+
+> @resident-secretary/dashboard@1.0.0 dev
+> next dev
+
+  ▲ Next.js 14.2.30
+  - Local:        http://localhost:3000
+
+ ✓ Starting...
+ ✓ Ready in 7.5s
+ ○ Compiling /middleware ...
+ ✓ Compiled /middleware in 757ms (122 modules)
+ ○ Compiling / ...
+ ✓ Compiled / in 7.7s (1431 modules)
+ GET / 200 in 2015ms
+ GET / 200 in 63ms
+[?25h

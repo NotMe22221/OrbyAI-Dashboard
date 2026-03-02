@@ -1,0 +1,17 @@
+{
+  "name": "resident-secretary-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:dashboard": "npm --workspace @resident-secretary/dashboard run dev",
+    "build:dashboard": "npm --workspace @resident-secretary/dashboard run build",
+    "start:dashboard": "npm --workspace @resident-secretary/dashboard run start",
+    "lint:dashboard": "npm --workspace @resident-secretary/dashboard run lint",
+    "artifact:dashboard": "powershell -ExecutionPolicy Bypass -File scripts/package-dashboard-build.ps1"
+  }
+}
+
