@@ -16,6 +16,7 @@ import { getPendingApproval, clearPendingApproval, isApprovalTranscript, isRejec
 import { requireAuthedUser } from "@/lib/supabase-server";
 import { publishEvent } from "@/lib/sse-hub";
 import { executeIntegrationAction } from "@/lib/integrations";
+import { isIntegrationAuthError } from "@/lib/integrations/errors";
 import { synthesizeVoiceSummary } from "@/lib/tts/elevenlabs";
 
 export const runtime = "nodejs";
@@ -24,6 +25,113 @@ function approvePreview(operation: string, params: Record<string, unknown>) {
   const to = String(params.to ?? params.recipient ?? "Unknown");
   const subject = String(params.subject ?? params.title ?? operation);
   return `To: ${to}\nSubj: ${subject}`;
+}
+
+function isMockResult(result: unknown) {
+  if (!result || typeof result !== "object") {
+    return false;
+  }
+  const row = result as Record<string, unknown>;
+  return row.mock === true || row.source === "mock_data";
+}
+
+function summarizeActionResult(action: { service: string; operation: string }, result: unknown) {
+  const asObj = (result ?? {}) as Record<string, unknown>;
+  const mockPrefix = isMockResult(result) ? "Demo mode (integration not connected). " : "";
+
+  if (action.service === "gmail" && action.operation === "read_inbox") {
+    const messages = Array.isArray(asObj.messages) ? asObj.messages : [];
+    if (messages.length === 0) {
+      return `${mockPrefix}No recent emails found.`;
+    }
+
+    const lines = messages.slice(0, 3).map((msg, idx) => {
+      const row = msg as Record<string, unknown>;
+      const subject = String(row.subject ?? "(no subject)");
+      const from = String(row.from ?? "unknown sender");
+      const snippet = String(row.snippet ?? "");
+      return `${idx + 1}. ${subject} - ${from}\n   ${snippet}`;
+    });
+    return `${mockPrefix}Top latest emails:\n${lines.join("\n")}`;
+  }
+
+  if (action.service === "calendar" && action.operation === "list_events") {
+    const items = Array.isArray(asObj.items) ? asObj.items : [];
+    if (items.length === 0) {
+      return `${mockPrefix}No upcoming calendar events found.`;
+    }
+    const lines = items.slice(0, 5).map((event, idx) => {
+      const row = event as Record<string, unknown>;
+      const title = String(row.summary ?? "(untitled)");
+      const start = (row.start as Record<string, unknown> | undefined)?.dateTime ??
+        (row.start as Record<string, unknown> | undefined)?.date ??
+        "unknown time";
+      return `${idx + 1}. ${title} at ${String(start)}`;
+    });
+    return `${mockPrefix}Upcoming events:\n${lines.join("\n")}`;
+  }
+
+  if (action.service === "youtube" && action.operation === "search_and_summarize") {
+    const items = Array.isArray(asObj.items) ? asObj.items : [];
+    if (items.length === 0) {
+      return `${mockPrefix}No YouTube videos found.`;
+    }
+    const lines = items.slice(0, 3).map((item, idx) => {
+      const row = item as Record<string, unknown>;
+      const snippet = row.snippet as Record<string, unknown> | undefined;
+      const id = row.id as Record<string, unknown> | undefined;
+      const title = String(snippet?.title ?? "(untitled)");
+      const videoId = String(id?.videoId ?? "");
+      const url = videoId ? `https://www.youtube.com/watch?v=${videoId}` : "https://www.youtube.com";
+      return `${idx + 1}. ${title}\n   ${url}`;
+    });
+    return `${mockPrefix}Top YouTube results:\n${lines.join("\n")}`;
+  }
+
+  if (action.service === "notion") {
+    const results = Array.isArray(asObj.results) ? asObj.results : [];
+    if (results.length === 0) {
+      return `${mockPrefix}No Notion pages matched.`;
+    }
+    return `${mockPrefix}Found ${results.length} Notion items.`;
+  }
+
+  if (typeof asObj.note === "string" && asObj.note.trim()) {
+    if (mockPrefix && !asObj.note.toLowerCase().includes("demo mode")) {
+      return `${mockPrefix}${asObj.note}`;
+    }
+    return asObj.note;
+  }
+
+  return `${mockPrefix}${action.service}.${action.operation} completed.`;
+}
+
+function buildDetailedResponse(base: string, outcomes: Array<{ action: { service: string; operation: string }; result: unknown; error?: string }>) {
+  if (outcomes.length === 0) {
+    return base;
+  }
+  const hasMockData = outcomes.some((entry) => isMockResult(entry.result));
+
+  const lines = outcomes.map((entry) => {
+    if (entry.error) {
+      return `${entry.action.service}.${entry.action.operation}: ${entry.error}`;
+    }
+    return summarizeActionResult(entry.action, entry.result);
+  });
+
+  const sections = [base];
+  if (hasMockData) {
+    sections.push("Demo mode: one or more integrations are not connected, so I used mock data.");
+  }
+  sections.push(lines.join("\n\n"));
+  return sections.join("\n\n");
+}
+
+function actionErrorMessage(action: { service: string; operation: string }, error: unknown) {
+  if (isIntegrationAuthError(error)) {
+    return `Connection for ${action.service} is no longer valid. Reconnect ${action.service} in Connections and try again.`;
+  }
+  return error instanceof Error ? error.message : "action_failed";
 }
 
 export async function POST(request: Request) {
@@ -69,6 +177,7 @@ export async function POST(request: Request) {
     if (isApprovalTranscript(transcript)) {
       clearPendingApproval(userId, sessionId);
       publishEvent(sessionId, { type: "status", message: "acting", step: "Approval received. Executing actions" });
+      const outcomes: Array<{ action: { service: string; operation: string }; result: unknown; error?: string }> = [];
 
       for (const action of pending.actions) {
         publishEvent(sessionId, {
@@ -79,29 +188,40 @@ export async function POST(request: Request) {
         try {
           const result = await executeIntegrationAction(userId, action);
           await addActionLog({ sessionId, action, approved: true, result });
+          outcomes.push({ action, result });
         } catch (error) {
+          const message = actionErrorMessage(action, error);
+          if (isIntegrationAuthError(error)) {
+            publishEvent(sessionId, {
+              type: "error",
+              message,
+            });
+          }
           await addActionLog({
             sessionId,
             action,
             approved: true,
-            result: { error: error instanceof Error ? error.message : "execution_failed" },
+            result: { error: message },
           });
+          outcomes.push({ action, result: null, error: message });
         }
       }
 
-      const audioUrl = await synthesizeVoiceSummary(pending.voiceSummary);
+      const responseText = buildDetailedResponse(pending.responseText, outcomes);
+      const voiceSummary = responseText.slice(0, 300);
+      const audioUrl = await synthesizeVoiceSummary(voiceSummary);
       await addMessage({
         sessionId,
         role: "assistant",
-        content: pending.responseText,
-        voiceSummary: pending.voiceSummary,
+        content: responseText,
+        voiceSummary,
       });
 
       publishEvent(sessionId, {
         type: "complete",
-        voice_summary: pending.voiceSummary,
+        voice_summary: voiceSummary,
         audio_url: audioUrl,
-        response_text: pending.responseText,
+        response_text: responseText,
       });
 
       return NextResponse.json({ accepted: true, session_id: sessionId, status: "approved_and_executed" }, { status: 202 });
@@ -233,6 +353,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ accepted: true, session_id: sessionId, mode: "awaiting_approval" }, { status: 202 });
   }
 
+  const outcomes: Array<{ action: { service: string; operation: string }; result: unknown; error?: string }> = [];
   for (const action of agentB.output.actions) {
     publishEvent(sessionId, {
       type: "status",
@@ -243,18 +364,27 @@ export async function POST(request: Request) {
     try {
       const result = await executeIntegrationAction(userId, action);
       await addActionLog({ sessionId, action, approved: false, result });
+      outcomes.push({ action, result });
     } catch (error) {
+      const message = actionErrorMessage(action, error);
+      if (isIntegrationAuthError(error)) {
+        publishEvent(sessionId, {
+          type: "error",
+          message,
+        });
+      }
       await addActionLog({
         sessionId,
         action,
         approved: false,
-        result: { error: error instanceof Error ? error.message : "action_failed" },
+        result: { error: message },
       });
+      outcomes.push({ action, result: null, error: message });
     }
   }
 
-  const responseText = agentB.output.response_text;
-  const voiceSummary = agentB.output.voice_summary.slice(0, 300);
+  const responseText = buildDetailedResponse(agentB.output.response_text, outcomes);
+  const voiceSummary = responseText.slice(0, 300);
   const audioUrl = await synthesizeVoiceSummary(voiceSummary);
 
   await addMessage({
@@ -273,6 +403,3 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ accepted: true, session_id: sessionId, mode: "agent_b" }, { status: 202 });
 }
-
-
-

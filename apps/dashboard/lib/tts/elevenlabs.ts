@@ -1,14 +1,48 @@
-import { optionalEnv } from "../env";
+﻿import { optionalEnv } from "../env";
 
 function toBase64(buffer: ArrayBuffer) {
   return Buffer.from(buffer).toString("base64");
 }
 
+let cachedVoiceId: string | undefined;
+
+async function resolveVoiceId(apiKey: string) {
+  if (cachedVoiceId) {
+    return cachedVoiceId;
+  }
+
+  const configured = optionalEnv("ELEVENLABS_VOICE_ID") ?? optionalEnv("ELEVENLABS_AGENT_ID");
+  if (configured && !configured.startsWith("agent_")) {
+    cachedVoiceId = configured;
+    return configured;
+  }
+
+  const voicesRes = await fetch("https://api.elevenlabs.io/v1/voices", {
+    headers: {
+      "xi-api-key": apiKey,
+    },
+  });
+
+  if (!voicesRes.ok) {
+    return undefined;
+  }
+
+  const voicesPayload = await voicesRes.json();
+  const voiceId = voicesPayload?.voices?.[0]?.voice_id as string | undefined;
+  if (voiceId) {
+    cachedVoiceId = voiceId;
+  }
+  return voiceId;
+}
+
 export async function synthesizeVoiceSummary(summary: string) {
   const apiKey = optionalEnv("ELEVENLABS_API_KEY");
-  const voiceId = optionalEnv("ELEVENLABS_VOICE_ID") ?? optionalEnv("ELEVENLABS_AGENT_ID");
+  if (!apiKey || !summary?.trim()) {
+    return undefined;
+  }
 
-  if (!apiKey || !voiceId || !summary?.trim()) {
+  const voiceId = await resolveVoiceId(apiKey);
+  if (!voiceId) {
     return undefined;
   }
 
@@ -17,6 +51,7 @@ export async function synthesizeVoiceSummary(summary: string) {
     headers: {
       "xi-api-key": apiKey,
       "Content-Type": "application/json",
+      Accept: "audio/mpeg",
     },
     body: JSON.stringify({
       text: summary.slice(0, 300),
@@ -35,6 +70,3 @@ export async function synthesizeVoiceSummary(summary: string) {
   const audio = await res.arrayBuffer();
   return `data:audio/mpeg;base64,${toBase64(audio)}`;
 }
-
-
-

@@ -1,10 +1,20 @@
-"use client";
+﻿"use client";
 
 type TranscriptHandler = (payload: { text: string; final: boolean }) => void;
 type VoidHandler = () => void;
 
 let vapiClient: any;
 let cleanupFns: Array<() => void> = [];
+let nativeRecognition: any = null;
+
+function getNativeSpeechCtor() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const scope = window as any;
+  return scope.SpeechRecognition ?? scope.webkitSpeechRecognition ?? null;
+}
 
 async function getClient() {
   if (typeof window === "undefined") {
@@ -56,45 +66,126 @@ export async function startVapiSession(args: {
   onError: (message: string) => void;
 }) {
   const client = await getClient();
-  if (!client) {
-    args.onError("Voice input via Vapi is disabled.");
+
+  if (client) {
+    const onMessage = (message: any) => {
+      const normalized = normalizeTranscript(message);
+      if (normalized) {
+        args.onTranscript(normalized);
+      }
+    };
+
+    const onSpeechStart = () => args.onSpeechStart();
+    const onError = (error: any) => args.onError(error?.message ?? "Vapi error");
+
+    client.on?.("message", onMessage);
+    client.on?.("speech-start", onSpeechStart);
+    client.on?.("error", onError);
+
+    cleanupFns.push(() => client.off?.("message", onMessage));
+    cleanupFns.push(() => client.off?.("speech-start", onSpeechStart));
+    cleanupFns.push(() => client.off?.("error", onError));
+
+    await client.start?.();
+    return true;
+  }
+
+  const NativeSpeechCtor = getNativeSpeechCtor();
+  if (!NativeSpeechCtor) {
+    args.onError("Voice input is unavailable in this browser. Use Chrome and allow microphone access.");
     return false;
   }
 
-  const onMessage = (message: any) => {
-    const normalized = normalizeTranscript(message);
-    if (normalized) {
-      args.onTranscript(normalized);
+  try {
+    if (nativeRecognition) {
+      try {
+        nativeRecognition.stop?.();
+        nativeRecognition.abort?.();
+      } catch {
+        // Ignore cleanup errors from previous session.
+      }
+      nativeRecognition = null;
     }
-  };
 
-  const onSpeechStart = () => args.onSpeechStart();
-  const onError = (error: any) => args.onError(error?.message ?? "Vapi error");
+    const recognition = new NativeSpeechCtor();
+    nativeRecognition = recognition;
+    recognition.lang = "en-US";
+    recognition.interimResults = true;
+    recognition.continuous = false;
 
-  client.on?.("message", onMessage);
-  client.on?.("speech-start", onSpeechStart);
-  client.on?.("error", onError);
+    recognition.onstart = () => {
+      args.onSpeechStart();
+    };
 
-  cleanupFns.push(() => client.off?.("message", onMessage));
-  cleanupFns.push(() => client.off?.("speech-start", onSpeechStart));
-  cleanupFns.push(() => client.off?.("error", onError));
+    recognition.onresult = (event: any) => {
+      const idx = event?.resultIndex ?? 0;
+      const result = event?.results?.[idx];
+      if (!result) {
+        return;
+      }
 
-  await client.start?.();
-  return true;
+      let text = "";
+      const len = Number(result?.length ?? 0);
+      for (let i = 0; i < len; i += 1) {
+        text += String(result?.[i]?.transcript ?? "");
+      }
+      text = text.trim();
+
+      if (text) {
+        args.onTranscript({ text, final: Boolean(result.isFinal) });
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      const code = String(event?.error ?? "speech_error");
+      if (code === "no-speech" || code === "aborted") {
+        return;
+      }
+      args.onError(`Speech recognition error: ${code}`);
+    };
+
+    recognition.onend = () => {
+      nativeRecognition = null;
+    };
+
+    cleanupFns.push(() => {
+      try {
+        recognition.onstart = null;
+        recognition.onresult = null;
+        recognition.onerror = null;
+        recognition.onend = null;
+        recognition.abort?.();
+      } catch {
+        // Ignore best-effort cleanup errors.
+      }
+    });
+
+    recognition.start();
+    return true;
+  } catch (error) {
+    args.onError(error instanceof Error ? error.message : "Unable to start speech recognition.");
+    return false;
+  }
 }
 
 export async function stopVapiSession() {
   const client = await getClient();
-  if (!client) {
-    return;
+  if (client) {
+    await client.stop?.();
   }
 
-  await client.stop?.();
+  if (nativeRecognition) {
+    try {
+      nativeRecognition.stop?.();
+      nativeRecognition.abort?.();
+    } catch {
+      // Ignore stop errors.
+    }
+    nativeRecognition = null;
+  }
+
   for (const clean of cleanupFns) {
     clean();
   }
   cleanupFns = [];
 }
-
-
-

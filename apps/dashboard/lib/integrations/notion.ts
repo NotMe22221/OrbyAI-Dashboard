@@ -1,15 +1,16 @@
 import type { AgentBAction } from "@resident-secretary/contracts";
 import { QUICK_SAY_EXAMPLES } from "../constants";
 import { getEnv, optionalEnv } from "../env";
+import { IntegrationAuthError } from "./errors";
 import type { IntegrationProvider } from "./types";
 
 function buildNotionAuthUrl(redirectUri: string, state: string) {
   const override = optionalEnv("NOTION_AUTHORIZATION_URL");
   if (override) {
     const url = new URL(override);
-    if (!url.searchParams.has("state")) {
-      url.searchParams.set("state", state);
-    }
+    // Always align callback with the current runtime base URL.
+    url.searchParams.set("redirect_uri", redirectUri);
+    url.searchParams.set("state", state);
     return url.toString();
   }
 
@@ -52,6 +53,17 @@ async function exchangeNotionCode(code: string, redirectUri: string) {
   };
 }
 
+async function throwNotionApiError(res: Response): Promise<never> {
+  const payload = await res.json().catch(() => ({}));
+  const message = String(payload?.message ?? payload?.code ?? "");
+
+  if (res.status === 401 || res.status === 403) {
+    throw new IntegrationAuthError("notion", "token_expired", "Notion authorization expired. Reconnect Notion in Connections.");
+  }
+
+  throw new Error(`Notion API failed: ${res.status}${message ? ` ${message}` : ""}`);
+}
+
 async function executeNotion(action: AgentBAction, accessToken: string) {
   const searchBody = {
     query: String(action.params.query ?? ""),
@@ -69,7 +81,7 @@ async function executeNotion(action: AgentBAction, accessToken: string) {
   });
 
   if (!res.ok) {
-    throw new Error(`Notion action failed: ${res.status}`);
+    await throwNotionApiError(res);
   }
 
   return res.json();
@@ -85,10 +97,30 @@ export const notionProvider: IntegrationProvider = {
   async exchangeCode(code, redirectUri) {
     return exchangeNotionCode(code, redirectUri);
   },
+  async healthCheck(accessToken) {
+    const res = await fetch("https://api.notion.com/v1/search", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ query: "", page_size: 1 }),
+    });
+
+    if (res.ok) {
+      return { ok: true };
+    }
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, code: "token_expired", message: "Notion token is invalid or expired." };
+    }
+
+    const payload = await res.json().catch(() => ({}));
+    const message = String(payload?.message ?? payload?.code ?? "Unable to validate Notion connection.");
+    return { ok: false, code: "api_error", message };
+  },
   async executeAction(action, accessToken) {
     return executeNotion(action, accessToken);
   },
 };
-
-
 

@@ -8,7 +8,6 @@ import { TaskOverlay } from "@/components/TaskOverlay";
 import { useVoiceSession } from "@/context/VoiceSessionContext";
 
 export default function HomePage() {
-  const voiceEnabled = Boolean(process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY?.trim());
   const {
     sessionId,
     orbState,
@@ -32,28 +31,22 @@ export default function HomePage() {
 
       <Orb state={orbState} />
 
-      {voiceEnabled ? (
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => void startListening()}
-            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-black"
-          >
-            Start Voice
-          </button>
-          <button
-            type="button"
-            onClick={() => void stopListening()}
-            className="rounded-md border border-white/20 px-4 py-2 text-sm text-slate-100"
-          >
-            Stop Voice
-          </button>
-        </div>
-      ) : (
-        <section className="rounded-xl border border-white/10 bg-panel/55 p-3 text-xs text-slate-300">
-          Voice input is disabled. Use manual transcript mode below.
-        </section>
-      )}
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => void startListening()}
+          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-black"
+        >
+          Start Voice
+        </button>
+        <button
+          type="button"
+          onClick={() => void stopListening()}
+          className="rounded-md border border-white/20 px-4 py-2 text-sm text-slate-100"
+        >
+          Stop Voice
+        </button>
+      </div>
 
       <LiveTranscription transcript={liveTranscript} />
       <TaskOverlay items={activity} />

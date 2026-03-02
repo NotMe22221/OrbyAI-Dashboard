@@ -1,9 +1,25 @@
 import type { AgentBAction } from "@resident-secretary/contracts";
 import { QUICK_SAY_EXAMPLES } from "../constants";
-import { buildGoogleAuthUrl, exchangeGoogleCode, googleProfile } from "./google-shared";
+import { IntegrationAuthError } from "./errors";
+import {
+  buildGoogleAuthUrl,
+  exchangeGoogleCode,
+  googleProfile,
+  parseGoogleApiFailure,
+  refreshGoogleAccessToken,
+} from "./google-shared";
 import type { IntegrationProvider } from "./types";
 
 const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar";
+
+async function throwCalendarApiError(res: Response): Promise<never> {
+  const details = await parseGoogleApiFailure(res);
+  if (details.auth) {
+    throw new IntegrationAuthError("calendar", "token_expired", "Calendar authorization expired. Reconnect Calendar in Connections.");
+  }
+
+  throw new Error(`Calendar API failed: ${details.status}${details.message ? ` ${details.message}` : ""}`);
+}
 
 async function executeCalendar(action: AgentBAction, accessToken: string) {
   switch (action.operation) {
@@ -14,7 +30,7 @@ async function executeCalendar(action: AgentBAction, accessToken: string) {
         { headers: { Authorization: `Bearer ${accessToken}` } },
       );
       if (!res.ok) {
-        throw new Error(`Calendar read failed: ${res.status}`);
+        await throwCalendarApiError(res);
       }
       return res.json();
     }
@@ -41,10 +57,33 @@ export const calendarProvider: IntegrationProvider = {
     const accountEmail = await googleProfile(tokens.accessToken);
     return { ...tokens, accountEmail };
   },
+  async refreshToken(refreshToken) {
+    try {
+      return await refreshGoogleAccessToken(refreshToken);
+    } catch (error) {
+      const message = error instanceof Error ? error.message.toLowerCase() : "";
+      const code = message.includes("invalid_grant") ? "token_revoked" : "reauth_required";
+      throw new IntegrationAuthError("calendar", code, "Calendar authorization expired or was revoked. Reconnect Calendar.");
+    }
+  },
+  async healthCheck(accessToken) {
+    const res = await fetch("https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=1", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (res.ok) {
+      return { ok: true };
+    }
+    const details = await parseGoogleApiFailure(res);
+    if (details.auth) {
+      return { ok: false, code: "token_expired", message: "Calendar token is invalid or expired." };
+    }
+    return {
+      ok: false,
+      code: "api_error",
+      message: details.message || "Unable to validate Calendar connection.",
+    };
+  },
   async executeAction(action, accessToken) {
     return executeCalendar(action, accessToken);
   },
 };
-
-
-

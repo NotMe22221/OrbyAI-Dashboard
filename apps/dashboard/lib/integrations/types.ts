@@ -12,6 +12,18 @@ export type AuthUrlArgs = {
   state: string;
 };
 
+export type RefreshTokenResult = {
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt?: string;
+};
+
+export type IntegrationHealth = {
+  ok: boolean;
+  code?: string;
+  message?: string;
+};
+
 export interface IntegrationProvider {
   service: IntegrationService;
   requiredEnv: string[];
@@ -19,6 +31,8 @@ export interface IntegrationProvider {
   getAuthorizationUrl(args: AuthUrlArgs): string;
   exchangeCode(code: string, redirectUri: string): Promise<OAuthTokenResult>;
   executeAction(action: AgentBAction, accessToken: string): Promise<unknown>;
+  refreshToken?(refreshToken: string): Promise<RefreshTokenResult>;
+  healthCheck?(accessToken: string): Promise<IntegrationHealth>;
 }
 
 

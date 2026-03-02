@@ -118,6 +118,41 @@ export async function getIntegrationsForUser(userId: string) {
   return data ?? [];
 }
 
+export async function getIntegrationLastUsedMap(userId: string) {
+  const supabase = createSupabaseAdminClient();
+  const { data: sessions } = await supabase
+    .from("sessions")
+    .select("id")
+    .eq("user_id", userId)
+    .limit(2000);
+
+  const sessionIds = (sessions ?? []).map((row) => row.id).filter(Boolean);
+  if (sessionIds.length === 0) {
+    return {};
+  }
+
+  const { data } = await supabase
+    .from("actions")
+    .select("service,executed_at")
+    .in("session_id", sessionIds as string[])
+    .order("executed_at", { ascending: false })
+    .limit(4000);
+
+  const lastUsed: Partial<Record<IntegrationService, string>> = {};
+  for (const row of data ?? []) {
+    const service = row.service as IntegrationService;
+    if (!service || lastUsed[service]) {
+      continue;
+    }
+    const executedAt = typeof row.executed_at === "string" ? row.executed_at : null;
+    if (executedAt) {
+      lastUsed[service] = executedAt;
+    }
+  }
+
+  return lastUsed;
+}
+
 export async function getHistorySessions(userId: string, search: string | null, page: number, pageSize: number) {
   const supabase = createSupabaseAdminClient();
 
