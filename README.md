@@ -6,6 +6,13 @@ Resident Secretary is a voice-native AI dashboard built with:
 - Backend: Next.js API Routes, SSE streaming, Gemini 2.0 Flash (Agent A), Claude 3.7 Sonnet (Agent B), ElevenLabs TTS
 - Data: Supabase PostgreSQL + Auth
 
+## Live Demo
+
+- Hosted login: [https://your-vercel-domain.vercel.app/login](https://your-vercel-domain.vercel.app/login)
+- Full demo guide: [DEMO.md](./DEMO.md)
+
+Replace `your-vercel-domain` with your deployed Vercel domain before sharing publicly.
+
 ## Monorepo Layout
 
 - `apps/dashboard` - Next.js dashboard app (frontend + backend routes)
@@ -18,34 +25,64 @@ Resident Secretary is a voice-native AI dashboard built with:
 npm install
 ```
 
-## Environment Variables
+## Vercel Deployment (Click-to-Test Demo)
 
-1. Copy root `.env.example` values into `apps/dashboard/.env.local` (or your platform env manager).
-2. Ensure the following are present for full production functionality:
-   - Supabase: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`
-   - Voice/LLMs: `VAPI_PUBLIC_KEY`, `VAPI_SERVER_KEY`, `GOOGLE_AI_API_KEY`, `ANTHROPIC_API_KEY`
-   - TTS: `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`
-   - OAuth: Google, Slack, Linear, Notion credentials
-   - Encryption: `INTEGRATION_ENCRYPTION_KEY` (32-byte base64 or 64-char hex)
+1. Create a Vercel project from this repository.
+2. Set project root to repository root.
+3. Build command:
+   - `npm run build:dashboard`
+4. Install command:
+   - `npm install`
+5. Add all required environment variables in Vercel.
+6. Set `NEXT_PUBLIC_APP_URL` to your Vercel domain.
+
+### Required Environment Variables (Vercel)
+
+- Supabase:
+  - `SUPABASE_URL`
+  - `SUPABASE_ANON_KEY`
+  - `SUPABASE_SERVICE_KEY`
+  - `NEXT_PUBLIC_SUPABASE_URL`
+  - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- LLM/TTS:
+  - `GOOGLE_AI_API_KEY`
+  - `ELEVENLABS_API_KEY`
+  - `ELEVENLABS_VOICE_ID`
+- OAuth:
+  - `GOOGLE_CLIENT_ID`
+  - `GOOGLE_CLIENT_SECRET`
+  - `NOTION_CLIENT_ID`
+  - `NOTION_CLIENT_SECRET`
+  - `NOTION_AUTHORIZATION_URL` (optional)
+- Security:
+  - `INTEGRATION_ENCRYPTION_KEY`
+- App base:
+  - `NEXT_PUBLIC_APP_URL=https://your-vercel-domain.vercel.app`
 
 ## Supabase Setup
 
-1. Create a Supabase project.
+1. Create a dedicated Supabase demo project.
 2. Run migration SQL from:
    - `apps/dashboard/supabase/migrations/202603010001_resident_secretary_schema.sql`
 3. Confirm RLS is enabled and policies are created.
-4. In Authentication settings, enable Email/Password and email verification.
+4. Enable Email/Password auth.
+5. Create one shared demo user for hosted login testing.
 
 ## OAuth App Setup
 
-Set callback URLs for each provider:
+Set callback URLs for hosted deployment:
 
-- Gmail: `http://localhost:3000/api/auth/callback/gmail`
-- Google Calendar: `http://localhost:3000/api/auth/callback/calendar`
-- YouTube: `http://localhost:3000/api/auth/callback/youtube`
-- Slack: `http://localhost:3000/api/auth/callback/slack`
-- Linear: `http://localhost:3000/api/auth/callback/linear`
-- Notion: `http://localhost:3000/api/auth/callback/notion`
+- `https://your-vercel-domain.vercel.app/api/auth/callback/gmail`
+- `https://your-vercel-domain.vercel.app/api/auth/callback/calendar`
+- `https://your-vercel-domain.vercel.app/api/auth/callback/youtube`
+- `https://your-vercel-domain.vercel.app/api/auth/callback/notion`
+
+Local callbacks (fallback):
+
+- `http://localhost:3000/api/auth/callback/gmail`
+- `http://localhost:3000/api/auth/callback/calendar`
+- `http://localhost:3000/api/auth/callback/youtube`
+- `http://localhost:3000/api/auth/callback/notion`
 
 ## Run Locally
 
@@ -53,9 +90,9 @@ Set callback URLs for each provider:
 npm run dev:dashboard
 ```
 
-Chrome URL:
+Local URL:
 
-- `http://localhost:3000`
+- [http://localhost:3000](http://localhost:3000)
 
 ## Production Build
 
@@ -75,14 +112,6 @@ npm run artifact:dashboard
 Output:
 
 - `artifacts/dashboard-build.zip`
-
-## Optional Railway Deployment
-
-1. Create Railway service from repo.
-2. Set root/app to `apps/dashboard` or use monorepo config with root scripts.
-3. Add all environment variables.
-4. Build command: `npm run build:dashboard`
-5. Start command: `npm run start:dashboard`
 
 ## Security Guarantees Implemented
 
