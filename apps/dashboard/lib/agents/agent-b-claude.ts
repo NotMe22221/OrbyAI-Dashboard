@@ -2,6 +2,62 @@ import { AgentBOutputSchema, type AgentAOutput, type AgentBOutput } from "@resid
 import { optionalEnv } from "../env";
 import { WRITE_OPERATIONS } from "../constants";
 
+function buildHeuristicNarrative(transcript: string, actions: AgentBOutput["actions"]) {
+  if (actions.length === 0) {
+    return {
+      responseText:
+        "I need one specific task to run. Try: 'read my latest emails', 'show today’s calendar events', or 'search YouTube for topic X'.",
+      voiceSummary: "Tell me one specific task, like reading latest emails or listing calendar events.",
+    };
+  }
+
+  const lead = actions[0];
+  if (!lead) {
+    return {
+      responseText: "I mapped your request. Tell me what you want to run first.",
+      voiceSummary: "I mapped your request. Tell me what to run first.",
+    };
+  }
+
+  const actionSummary = actions
+    .map((action) => `${action.service}.${action.operation}${action.requires_approval ? " (needs approval)" : ""}`)
+    .join(", ");
+
+  return {
+    responseText: `I understood your request and I will run: ${actionSummary}.`,
+    voiceSummary: `Running ${lead.service} ${lead.operation.replaceAll("_", " ")} now.`,
+  };
+}
+
+function postProcessOutput(output: AgentBOutput, source: "claude" | "heuristic"): AgentBOutput {
+  const responseText = output.response_text.trim();
+  const vague =
+    responseText.length < 12 ||
+    /prepared|completed|starting|done\./i.test(responseText) ||
+    responseText.toLowerCase() === "done";
+
+  const firstAction = output.actions[0];
+  const actionHint = firstAction
+    ? `Action: ${firstAction.service}.${firstAction.operation}.`
+    : "No integration action was inferred.";
+  const withHint = vague ? `${actionHint} Provide one clear task if this is not what you wanted.` : responseText;
+
+  const finalText =
+    source === "heuristic" && output.actions.length === 0
+      ? `${withHint} Claude is not configured right now, so I am using fallback intent logic.`
+      : withHint;
+
+  const summaryBase = output.voice_summary.trim().slice(0, 300);
+  const voiceSummary =
+    summaryBase.length > 0 ? summaryBase : `${firstAction ? `${firstAction.service} ${firstAction.operation}` : "Request"} ready.`;
+
+  return {
+    ...output,
+    response_text: finalText,
+    voice_summary: voiceSummary.slice(0, 300),
+  };
+}
+
 function guessActions(transcript: string): AgentBOutput {
   const lower = transcript.toLowerCase();
   const actions: AgentBOutput["actions"] = [];
@@ -41,9 +97,10 @@ function guessActions(transcript: string): AgentBOutput {
     });
   }
 
+  const narrative = buildHeuristicNarrative(transcript, actions);
   return {
-    response_text: "I mapped your request and prepared the required actions.",
-    voice_summary: "I mapped your request and prepared the next steps.",
+    response_text: narrative.responseText,
+    voice_summary: narrative.voiceSummary.slice(0, 300),
     actions,
   };
 }
@@ -67,8 +124,9 @@ export async function runAgentB(input: {
   const apiKey = optionalEnv("ANTHROPIC_API_KEY");
 
   if (!apiKey) {
+    const fallback = guessActions(input.transcript);
     return {
-      output: guessActions(input.transcript),
+      output: postProcessOutput(fallback, "heuristic"),
       latencyMs: Math.round(performance.now() - started),
       source: "heuristic" as const,
     };
@@ -96,6 +154,9 @@ export async function runAgentB(input: {
                   "Return valid JSON only.",
                   "Schema: { response_text, voice_summary(max300), actions[], follow_up_question? }",
                   "Each action: {service, operation, params, requires_approval}",
+                  "Write a direct answer first, then summarize planned actions clearly.",
+                  "Avoid vague phrasing like 'prepared' or 'completed' without details.",
+                  "If blocked, add an explicit next step in response_text.",
                   `Transcript: ${input.transcript}`,
                   `Session context: ${JSON.stringify(input.sessionContext)}`,
                   `Agent A output: ${JSON.stringify(input.agentAOutput)}`,
@@ -121,13 +182,14 @@ export async function runAgentB(input: {
 
     const parsed = AgentBOutputSchema.parse(extractJson(text));
     return {
-      output: parsed,
+      output: postProcessOutput(parsed, "claude"),
       latencyMs: Math.round(performance.now() - started),
       source: "claude" as const,
     };
   } catch {
+    const fallback = guessActions(input.transcript);
     return {
-      output: guessActions(input.transcript),
+      output: postProcessOutput(fallback, "heuristic"),
       latencyMs: Math.round(performance.now() - started),
       source: "heuristic" as const,
     };

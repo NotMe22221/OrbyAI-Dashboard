@@ -15,6 +15,9 @@ export default function HomePage() {
     assistantResponse,
     activity,
     errorMessage,
+    voiceDiagnostics,
+    showVoiceDebug,
+    toggleVoiceDebug,
     startListening,
     stopListening,
     submitTranscript,
@@ -27,6 +30,25 @@ export default function HomePage() {
     <div className="mx-auto grid max-w-4xl gap-4">
       <div className="rounded-xl border border-white/10 bg-panel/55 p-3 text-xs text-slate-400">
         Session ID: {sessionId}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <span className="rounded-md border border-white/15 bg-black/20 px-2 py-1 text-xs text-slate-200">
+          Mic: {voiceDiagnostics.micPermission === "granted" ? "Ready" : voiceDiagnostics.micPermission === "denied" ? "Blocked" : voiceDiagnostics.micPermission === "prompt" ? "Permission Needed" : "Unknown"}
+        </span>
+        <span className="rounded-md border border-white/15 bg-black/20 px-2 py-1 text-xs text-slate-200">
+          ASR: {voiceDiagnostics.selectedAsr ?? "Not selected"}
+        </span>
+        <span className="rounded-md border border-white/15 bg-black/20 px-2 py-1 text-xs text-slate-200">
+          Browser Speech: {voiceDiagnostics.browserSpeechSupported ? "Supported" : "Unsupported"}
+        </span>
+        <button
+          type="button"
+          onClick={toggleVoiceDebug}
+          className="rounded-md border border-white/20 px-2 py-1 text-xs text-slate-100"
+        >
+          {showVoiceDebug ? "Hide Debug" : "Show Debug"}
+        </button>
       </div>
 
       <Orb state={orbState} />
@@ -89,6 +111,15 @@ export default function HomePage() {
           >
             Clear
           </button>
+        </section>
+      )}
+
+      {showVoiceDebug && (
+        <section className="rounded-2xl border border-white/10 bg-panel/60 p-4">
+          <p className="mb-2 text-xs uppercase tracking-[0.2em] text-slate-400">Voice Debug</p>
+          <pre className="whitespace-pre-wrap text-xs text-slate-200">
+            {JSON.stringify(voiceDiagnostics, null, 2)}
+          </pre>
         </section>
       )}
     </div>

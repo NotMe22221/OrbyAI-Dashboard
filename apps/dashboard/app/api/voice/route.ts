@@ -21,6 +21,10 @@ import { synthesizeVoiceSummary } from "@/lib/tts/elevenlabs";
 
 export const runtime = "nodejs";
 
+function logVoicePhase(sessionId: string, phase: string, detail: Record<string, unknown> = {}) {
+  console.info(`[voice][${sessionId}] ${phase}`, detail);
+}
+
 function approvePreview(operation: string, params: Record<string, unknown>) {
   const to = String(params.to ?? params.recipient ?? "Unknown");
   const subject = String(params.subject ?? params.title ?? operation);
@@ -150,7 +154,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { session_id: sessionId, transcript, context } = parsed.data;
+  const { session_id: sessionId, transcript, context, asr_source: asrSource } = parsed.data;
+  logVoicePhase(sessionId, "received", {
+    asr_source: asrSource ?? "unknown",
+    transcript_length: transcript.length,
+  });
   await ensureSession(sessionId, userId);
   await addMessage({ sessionId, role: "user", content: transcript });
 
@@ -167,6 +175,7 @@ export async function POST(request: Request) {
       audio_url: audioUrl,
       response_text: responseText,
     });
+    logVoicePhase(sessionId, "completed_session_end", { audio_ready: !!audioUrl });
     return NextResponse.json({ accepted: true, session_id: sessionId, status: "session_ended" }, { status: 202 });
   }
 
@@ -223,6 +232,10 @@ export async function POST(request: Request) {
         audio_url: audioUrl,
         response_text: responseText,
       });
+      logVoicePhase(sessionId, "completed_approval_execute", {
+        actions: pending.actions.length,
+        audio_ready: !!audioUrl,
+      });
 
       return NextResponse.json({ accepted: true, session_id: sessionId, status: "approved_and_executed" }, { status: 202 });
     }
@@ -246,6 +259,7 @@ export async function POST(request: Request) {
         audio_url: audioUrl,
         response_text: responseText,
       });
+      logVoicePhase(sessionId, "completed_approval_rejected", { audio_ready: !!audioUrl });
 
       return NextResponse.json({ accepted: true, session_id: sessionId, status: "approval_rejected" }, { status: 202 });
     }
@@ -261,12 +275,22 @@ export async function POST(request: Request) {
   await addAgentLog({
     sessionId,
     agent: "agent_a",
-    input: { transcript, sessionContext, userProfile: context.user_profile },
+    input: {
+      transcript,
+      sessionContext,
+      userProfile: context.user_profile,
+      asr_source: asrSource ?? "unknown",
+    },
     output: agentA.output,
     latencyMs: agentA.latencyMs,
   });
 
   const decision = routeByAgentA(agentA.output);
+  logVoicePhase(sessionId, "routing_decision", {
+    path: decision.path,
+    reason: decision.reason,
+    agent_a_source: agentA.source,
+  });
 
   if (decision.path === "inline") {
     const responseText = agentA.output.inline_answer ?? "I can help with that.";
@@ -286,6 +310,7 @@ export async function POST(request: Request) {
       audio_url: audioUrl,
       response_text: responseText,
     });
+    logVoicePhase(sessionId, "completed_inline", { audio_ready: !!audioUrl });
 
     return NextResponse.json({ accepted: true, session_id: sessionId, mode: "inline" }, { status: 202 });
   }
@@ -308,6 +333,7 @@ export async function POST(request: Request) {
       audio_url: audioUrl,
       response_text: responseText,
     });
+    logVoicePhase(sessionId, "completed_fallback", { audio_ready: !!audioUrl });
 
     return NextResponse.json({ accepted: true, session_id: sessionId, mode: "fallback" }, { status: 202 });
   }
@@ -325,7 +351,14 @@ export async function POST(request: Request) {
   await addAgentLog({
     sessionId,
     agent: "agent_b",
-    input: { transcript, sessionContext, agentAOutput: agentA.output, integrationData },
+    input: {
+      transcript,
+      sessionContext,
+      agentAOutput: agentA.output,
+      integrationData,
+      asr_source: asrSource ?? "unknown",
+      route: decision.path,
+    },
     output: agentB.output,
     latencyMs: agentB.latencyMs,
   });
@@ -348,6 +381,10 @@ export async function POST(request: Request) {
       type: "approval",
       action: first.operation,
       preview: approvePreview(first.operation, first.params),
+    });
+    logVoicePhase(sessionId, "awaiting_approval", {
+      actions: approvalActions.length,
+      first_action: `${first.service}.${first.operation}`,
     });
 
     return NextResponse.json({ accepted: true, session_id: sessionId, mode: "awaiting_approval" }, { status: 202 });
@@ -399,6 +436,11 @@ export async function POST(request: Request) {
     voice_summary: voiceSummary,
     audio_url: audioUrl,
     response_text: responseText,
+  });
+  logVoicePhase(sessionId, "completed_agent_b", {
+    agent_b_source: agentB.source,
+    actions: agentB.output.actions.length,
+    audio_ready: !!audioUrl,
   });
 
   return NextResponse.json({ accepted: true, session_id: sessionId, mode: "agent_b" }, { status: 202 });

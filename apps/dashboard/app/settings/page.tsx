@@ -10,9 +10,21 @@ type IntegrationStatus = {
   missing_env: string[];
 };
 
+type VoiceHealth = {
+  asr_mode: "browser_primary";
+  vapi_available: boolean;
+  tts_available: boolean;
+  llm: {
+    agent_a: "gemini" | "heuristic";
+    agent_b: "claude" | "heuristic";
+  };
+  timestamp: string;
+};
+
 export default function SettingsPage() {
   const [integrationStatus, setIntegrationStatus] = useState<IntegrationStatus[]>([]);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [voiceHealth, setVoiceHealth] = useState<VoiceHealth | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -29,6 +41,25 @@ export default function SettingsPage() {
       .catch(() => {
         if (!mounted) return;
         setStatusError("Unable to load integration status.");
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    fetch("/api/voice/health")
+      .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (!mounted || !ok) {
+          return;
+        }
+        setVoiceHealth(data as VoiceHealth);
+      })
+      .catch(() => {
+        // keep null if unavailable
       });
 
     return () => {
@@ -97,6 +128,32 @@ export default function SettingsPage() {
           <li>No raw audio persistence.</li>
           <li>Context window limited to the last 5 messages.</li>
         </ul>
+      </section>
+
+      <section className="rounded-2xl border border-white/10 bg-panel/60 p-4">
+        <p className="text-sm font-semibold text-white">Voice + Assistant Runtime</p>
+        {!voiceHealth ? (
+          <p className="mt-2 text-sm text-slate-300">Unable to load voice health data.</p>
+        ) : (
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+              <p className="text-xs uppercase tracking-[0.15em] text-slate-400">ASR Mode</p>
+              <p className="text-sm text-white">{voiceHealth.asr_mode}</p>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+              <p className="text-xs uppercase tracking-[0.15em] text-slate-400">Vapi Available</p>
+              <p className="text-sm text-white">{voiceHealth.vapi_available ? "Yes" : "No"}</p>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+              <p className="text-xs uppercase tracking-[0.15em] text-slate-400">TTS Available</p>
+              <p className="text-sm text-white">{voiceHealth.tts_available ? "Yes" : "No"}</p>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+              <p className="text-xs uppercase tracking-[0.15em] text-slate-400">LLM Runtime</p>
+              <p className="text-sm text-white">Agent A: {voiceHealth.llm.agent_a} | Agent B: {voiceHealth.llm.agent_b}</p>
+            </div>
+          </div>
+        )}
       </section>
     </div>
   );

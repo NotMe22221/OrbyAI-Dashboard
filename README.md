@@ -13,6 +13,17 @@ Resident Secretary is a voice-native AI dashboard built with:
 
 Replace `your-vercel-domain` with your deployed Vercel domain before sharing publicly.
 
+## Voice Reliability Troubleshooting (Hosted Demo)
+
+- Use Chrome on desktop for the most reliable browser speech recognition.
+- Hosted microphone capture requires HTTPS. `http://localhost` is allowed for local development only.
+- If voice does not start:
+  - Check browser mic permission for the demo domain and allow access.
+  - Reload the page after permission changes.
+  - Confirm runtime readiness at `/api/voice/health`.
+- If you see `Unsupported` mic status:
+  - Switch to a browser with Web Speech support (recommended: latest Chrome).
+
 ## Monorepo Layout
 
 - `apps/dashboard` - Next.js dashboard app (frontend + backend routes)
@@ -121,4 +132,3 @@ Output:
 - Integration tokens are server-side only and encrypted at rest (app-layer encryption before DB write).
 - Agent context is limited to last 5 messages.
 - Session can be explicitly ended (`"end session"`) to clear memory continuity.
-

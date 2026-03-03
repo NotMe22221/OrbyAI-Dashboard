@@ -1,7 +1,8 @@
-﻿"use client";
+"use client";
 
 type TranscriptHandler = (payload: { text: string; final: boolean }) => void;
 type VoidHandler = () => void;
+export type ASREngine = "browser" | "vapi";
 
 let vapiClient: any;
 let cleanupFns: Array<() => void> = [];
@@ -14,6 +15,18 @@ function getNativeSpeechCtor() {
 
   const scope = window as any;
   return scope.SpeechRecognition ?? scope.webkitSpeechRecognition ?? null;
+}
+
+export function hasVapiPublicKey() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  const key = process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY ?? process.env.VAPI_PUBLIC_KEY;
+  return Boolean(key && key.trim().length > 0);
+}
+
+export function isBrowserSpeechSupported() {
+  return Boolean(getNativeSpeechCtor());
 }
 
 async function getClient() {
@@ -56,43 +69,13 @@ function normalizeTranscript(message: any): { text: string; final: boolean } | n
   return { text, final };
 }
 
-export async function initializeVapi() {
-  return getClient();
-}
-
-export async function startVapiSession(args: {
+async function startNativeRecognition(args: {
   onTranscript: TranscriptHandler;
   onSpeechStart: VoidHandler;
   onError: (message: string) => void;
 }) {
-  const client = await getClient();
-
-  if (client) {
-    const onMessage = (message: any) => {
-      const normalized = normalizeTranscript(message);
-      if (normalized) {
-        args.onTranscript(normalized);
-      }
-    };
-
-    const onSpeechStart = () => args.onSpeechStart();
-    const onError = (error: any) => args.onError(error?.message ?? "Vapi error");
-
-    client.on?.("message", onMessage);
-    client.on?.("speech-start", onSpeechStart);
-    client.on?.("error", onError);
-
-    cleanupFns.push(() => client.off?.("message", onMessage));
-    cleanupFns.push(() => client.off?.("speech-start", onSpeechStart));
-    cleanupFns.push(() => client.off?.("error", onError));
-
-    await client.start?.();
-    return true;
-  }
-
   const NativeSpeechCtor = getNativeSpeechCtor();
   if (!NativeSpeechCtor) {
-    args.onError("Voice input is unavailable in this browser. Use Chrome and allow microphone access.");
     return false;
   }
 
@@ -168,6 +151,72 @@ export async function startVapiSession(args: {
   }
 }
 
+async function startVapi(args: {
+  onTranscript: TranscriptHandler;
+  onSpeechStart: VoidHandler;
+  onError: (message: string) => void;
+}) {
+  const client = await getClient();
+  if (!client) {
+    return false;
+  }
+
+  const onMessage = (message: any) => {
+    const normalized = normalizeTranscript(message);
+    if (normalized) {
+      args.onTranscript(normalized);
+    }
+  };
+
+  const onSpeechStart = () => args.onSpeechStart();
+  const onError = (error: any) => args.onError(error?.message ?? "Vapi error");
+
+  client.on?.("message", onMessage);
+  client.on?.("speech-start", onSpeechStart);
+  client.on?.("error", onError);
+
+  cleanupFns.push(() => client.off?.("message", onMessage));
+  cleanupFns.push(() => client.off?.("speech-start", onSpeechStart));
+  cleanupFns.push(() => client.off?.("error", onError));
+
+  await client.start?.();
+  return true;
+}
+
+export async function initializeVapi() {
+  return getClient();
+}
+
+export async function startVapiSession(args: {
+  onTranscript: TranscriptHandler;
+  onSpeechStart: VoidHandler;
+  onError: (message: string) => void;
+  preferredEngine?: ASREngine;
+  onEngineSelected?: (engine: ASREngine) => void;
+}) {
+  const preferred = args.preferredEngine ?? "browser";
+  const order: ASREngine[] = preferred === "browser" ? ["browser", "vapi"] : ["vapi", "browser"];
+
+  for (const engine of order) {
+    if (engine === "browser") {
+      const ok = await startNativeRecognition(args);
+      if (ok) {
+        args.onEngineSelected?.("browser");
+        return true;
+      }
+    } else {
+      const ok = await startVapi(args);
+      if (ok) {
+        args.onEngineSelected?.("vapi");
+        return true;
+      }
+    }
+  }
+
+  args.onError("Voice input is unavailable in this browser. Use Chrome and allow microphone access.");
+  return false;
+}
+
 export async function stopVapiSession() {
   const client = await getClient();
   if (client) {
@@ -189,3 +238,4 @@ export async function stopVapiSession() {
   }
   cleanupFns = [];
 }
+
