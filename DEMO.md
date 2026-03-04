@@ -2,9 +2,10 @@
 
 ## Open The Demo
 
-- Live app: [https://your-vercel-domain.vercel.app/login](https://your-vercel-domain.vercel.app/login)
+- Live demo: [https://orbyai-rxlq.vercel.app/demo](https://orbyai-rxlq.vercel.app/demo)
+- Live login: [https://orbyai-rxlq.vercel.app/login](https://orbyai-rxlq.vercel.app/login)
 
-Replace `your-vercel-domain` with your deployed Vercel domain before publishing.
+Canonical production domain: `https://orbyai-rxlq.vercel.app`.
 
 ## Shared Demo Login
 
@@ -15,18 +16,18 @@ Use a dedicated Supabase demo project and dedicated demo user.
 
 ## 2-Minute Demo Script
 
-1. Open [Live Demo Login](https://your-vercel-domain.vercel.app/login)
+1. Open [Live Demo](https://orbyai-rxlq.vercel.app/demo)
 2. Sign in with the shared demo credentials.
 3. On Home, click **Start Voice** and speak a prompt.
 4. Open **Connections** and confirm each service status card state.
-5. Ask: “Read my latest emails” and verify a real provider response.
+5. Ask: "Read my latest emails" and verify a real provider response.
 
 ## Required Provider Callback URLs (Hosted)
 
-- `https://your-vercel-domain.vercel.app/api/auth/callback/gmail`
-- `https://your-vercel-domain.vercel.app/api/auth/callback/calendar`
-- `https://your-vercel-domain.vercel.app/api/auth/callback/youtube`
-- `https://your-vercel-domain.vercel.app/api/auth/callback/notion`
+- `https://orbyai-rxlq.vercel.app/api/auth/callback/gmail`
+- `https://orbyai-rxlq.vercel.app/api/auth/callback/calendar`
+- `https://orbyai-rxlq.vercel.app/api/auth/callback/youtube`
+- `https://orbyai-rxlq.vercel.app/api/auth/callback/notion`
 
 ## Safety Notes
 
@@ -63,4 +64,3 @@ If the hosted demo is unavailable:
 1. `npm install`
 2. `npm run dev:dashboard`
 3. Open [http://localhost:3000](http://localhost:3000)
-

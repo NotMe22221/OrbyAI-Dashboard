@@ -8,10 +8,11 @@ Resident Secretary is a voice-native AI dashboard built with:
 
 ## Live Demo
 
-- Hosted login: [https://your-vercel-domain.vercel.app/login](https://your-vercel-domain.vercel.app/login)
+- Hosted demo: [https://orbyai-rxlq.vercel.app/demo](https://orbyai-rxlq.vercel.app/demo)
+- Hosted login: [https://orbyai-rxlq.vercel.app/login](https://orbyai-rxlq.vercel.app/login)
 - Full demo guide: [DEMO.md](./DEMO.md)
 
-Replace `your-vercel-domain` with your deployed Vercel domain before sharing publicly.
+Canonical production domain: `https://orbyai-rxlq.vercel.app`.
 
 ## Voice Reliability Troubleshooting (Hosted Demo)
 
@@ -68,7 +69,7 @@ npm install
 - Security:
   - `INTEGRATION_ENCRYPTION_KEY`
 - App base:
-  - `NEXT_PUBLIC_APP_URL=https://your-vercel-domain.vercel.app`
+  - `NEXT_PUBLIC_APP_URL=https://orbyai-rxlq.vercel.app`
 
 ## Supabase Setup
 
@@ -83,10 +84,10 @@ npm install
 
 Set callback URLs for hosted deployment:
 
-- `https://your-vercel-domain.vercel.app/api/auth/callback/gmail`
-- `https://your-vercel-domain.vercel.app/api/auth/callback/calendar`
-- `https://your-vercel-domain.vercel.app/api/auth/callback/youtube`
-- `https://your-vercel-domain.vercel.app/api/auth/callback/notion`
+- `https://orbyai-rxlq.vercel.app/api/auth/callback/gmail`
+- `https://orbyai-rxlq.vercel.app/api/auth/callback/calendar`
+- `https://orbyai-rxlq.vercel.app/api/auth/callback/youtube`
+- `https://orbyai-rxlq.vercel.app/api/auth/callback/notion`
 
 Local callbacks (fallback):
 

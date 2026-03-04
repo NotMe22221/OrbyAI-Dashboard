@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { IntegrationService } from "@resident-secretary/contracts";
 import { encryptSecret } from "@/lib/crypto";
 import { upsertIntegration } from "@/lib/db";
-import { getAppUrl } from "@/lib/env";
+import { resolveAppUrl } from "@/lib/env";
 import { integrationProviders } from "@/lib/integrations";
 import { requireAuthedUser } from "@/lib/supabase-server";
 
@@ -20,16 +20,17 @@ export async function GET(
   request: Request,
   { params }: { params: { provider: string } },
 ) {
+  const appUrl = resolveAppUrl(request);
   const provider = parseProvider(params.provider);
   if (!provider) {
-    return NextResponse.redirect(`${getAppUrl()}/connections?status=error&reason=unknown_provider`);
+    return NextResponse.redirect(`${appUrl}/connections?status=error&reason=unknown_provider`);
   }
 
   let user;
   try {
     user = await requireAuthedUser();
   } catch {
-    return NextResponse.redirect(`${getAppUrl()}/login?next=/connections`);
+    return NextResponse.redirect(`${appUrl}/login?next=/connections`);
   }
 
   const url = new URL(request.url);
@@ -39,12 +40,12 @@ export async function GET(
 
   if (error) {
     return NextResponse.redirect(
-      `${getAppUrl()}/connections?provider=${provider}&status=error&reason=${encodeURIComponent(error)}`,
+      `${appUrl}/connections?provider=${provider}&status=error&reason=${encodeURIComponent(error)}`,
     );
   }
 
   if (!code) {
-    return NextResponse.redirect(`${getAppUrl()}/connections?provider=${provider}&status=error&reason=missing_code`);
+    return NextResponse.redirect(`${appUrl}/connections?provider=${provider}&status=error&reason=missing_code`);
   }
 
   const cookieStore = request.headers.get("cookie") ?? "";
@@ -55,16 +56,16 @@ export async function GET(
     ?.split("=")[1];
 
   if (stateCookie && state && stateCookie !== state) {
-    return NextResponse.redirect(`${getAppUrl()}/connections?provider=${provider}&status=error&reason=state_mismatch`);
+    return NextResponse.redirect(`${appUrl}/connections?provider=${provider}&status=error&reason=state_mismatch`);
   }
 
   try {
     const providerClient = integrationProviders[provider];
     if (!providerClient) {
-      return NextResponse.redirect(`${getAppUrl()}/connections?provider=${provider}&status=error&reason=provider_disabled`);
+      return NextResponse.redirect(`${appUrl}/connections?provider=${provider}&status=error&reason=provider_disabled`);
     }
 
-    const redirectUri = `${getAppUrl()}/api/auth/callback/${provider}`;
+    const redirectUri = `${appUrl}/api/auth/callback/${provider}`;
     const token = await providerClient.exchangeCode(code, redirectUri);
 
     await upsertIntegration({
@@ -76,11 +77,11 @@ export async function GET(
       accountEmail: token.accountEmail,
     });
 
-    return NextResponse.redirect(`${getAppUrl()}/connections?provider=${provider}&status=connected`);
+    return NextResponse.redirect(`${appUrl}/connections?provider=${provider}&status=connected`);
   } catch (exchangeError) {
     const reason = exchangeError instanceof Error ? exchangeError.message : "oauth_exchange_failed";
     return NextResponse.redirect(
-      `${getAppUrl()}/connections?provider=${provider}&status=error&reason=${encodeURIComponent(reason)}`,
+      `${appUrl}/connections?provider=${provider}&status=error&reason=${encodeURIComponent(reason)}`,
     );
   }
 }

@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import type { IntegrationService } from "@resident-secretary/contracts";
-import { getAppUrl } from "@/lib/env";
+import { resolveAppUrl } from "@/lib/env";
 import { removeIntegration } from "@/lib/db";
 import { integrationProviders, ensureProviderEnv } from "@/lib/integrations";
 import { requireAuthedUser } from "@/lib/supabase-server";
@@ -57,8 +57,9 @@ export async function GET(
     return NextResponse.json({ error: "Provider disabled" }, { status: 404 });
   }
 
+  const appUrl = resolveAppUrl(request);
   const state = randomUUID();
-  const redirectUri = `${getAppUrl()}/api/auth/callback/${provider}`;
+  const redirectUri = `${appUrl}/api/auth/callback/${provider}`;
   const authUrl = providerClient.getAuthorizationUrl({ redirectUri, state });
 
   const response = NextResponse.json({ provider, authorization_url: authUrl });
